@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StudyBot — Your AI Study Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="style.css">
+  <!-- DESMOS API -->
+  <script src="https://www.desmos.com/api/v1.9/calculator.js?apiKey=dcb31709b452b1cf9dc26972add0fda6"></script>
+</head>
+
+<body>
+
+  <!-- ══ MASTER GRAPH MODAL ══════════════════════════════════ -->
+  <div class="graph-modal-backdrop" id="graph-backdrop">
+    <div class="graph-modal">
+      <div class="graph-modal-header">
+        <div class="logo-text" style="font-size: 18px;">Master <span>Graph</span></div>
+        <button class="close-graph-btn" onclick="closeGraphModal()">&times;</button>
+      </div>
+      <div id="master-calculator" style="flex: 1; width: 100%;"></div>
+    </div>
+  </div>
+
+  <!-- ══ SIDEBAR ══════════════════════════════════════════════ -->
+  <aside class="sidebar">
+    <div class="logo">
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round">
+          <path d="M12 2L2 7l10 5 10-5-10-5z" />
+          <path d="M2 17l10 5 10-5" />
+          <path d="M2 12l10 5 10-5" />
+        </svg>
+      </div>
+      <div class="logo-text">Study<span>Bot</span></div>
+    </div>
+
+    <div class="sidebar-label">Your Metrics</div>
+
+    <div class="metrics-form">
+      <div class="field">
+        <label>Weekly study hours <span class="val" id="val-hours">15</span></label>
+        <input type="range" class="slider" id="s-hours" min="1" max="40" value="15"
+          oninput="document.getElementById('val-hours').textContent=this.value" />
+      </div>
+      <div class="field">
+        <label>Attendance <span class="val" id="val-att">80%</span></label>
+        <input type="range" class="slider" id="s-att" min="0" max="100" value="80"
+          oninput="document.getElementById('val-att').textContent=this.value+'%'" />
+      </div>
+      <div class="field">
+        <label>Class participation (0–10) <span class="val" id="val-part">6</span></label>
+        <input type="range" class="slider" id="s-part" min="0" max="10" step="0.5" value="6"
+          oninput="document.getElementById('val-part').textContent=this.value" />
+      </div>
+      <div class="field">
+        <label>Total score <span class="val" id="val-score">70</span></label>
+        <input type="range" class="slider" id="s-score" min="0" max="100" value="70"
+          oninput="document.getElementById('val-score').textContent=this.value" />
+      </div>
+
+      <button class="predict-btn" onclick="predictGrade()">⚡ Predict My Grade</button>
+
+      <div class="grade-card" id="grade-card">
+        <div class="label">Predicted Grade</div>
+        <div class="grade-display">
+          <div class="grade-letter" id="grade-letter">—</div>
+          <div class="grade-details">
+            <div class="method" id="grade-method"></div>
+            <div class="desc" id="grade-desc"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="quick-section">
+      <div class="sidebar-label">Quick Prompts</div>
+      <div class="quick-chips">
+        <button class="chip"
+          onclick="sendQuick('I am weak in Mathematics. Can you give me notes and study techniques?')">📐 I'm weak in
+          Mathematics</button>
+        <button class="chip" onclick="sendQuick('I am struggling with Physics concepts. Help me study better.')">⚛️
+          Struggling with Physics</button>
+        <button class="chip"
+          onclick="sendQuick('Can you suggest the best study techniques for me based on my performance?')">🧠 Best study
+          techniques for me</button>
+        <button class="chip" onclick="sendQuick('I need help with Chemistry. Please give me notes and tips.')">🧪 Help
+          me with Chemistry</button>
+        <button class="chip" onclick="sendQuick('How can I improve my attendance and still keep up with studies?')">📅
+          Improve my attendance</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ══ CHAT AREA ═════════════════════════════════════════════ -->
+  <main class="chat-area">
+    <header class="chat-header"
+      style="justify-content: space-between; align-items: center; display: flex; width: 100%;">
+      <div>
+        <div class="chat-header-title">AI Study Assistant</div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 16px;">
+        <button onclick="openGraphModal()"
+          style="padding: 8px 14px; font-family: var(--font-b); font-size: 13px; font-weight: 700; color: #fff; background: var(--accent); cursor: pointer; border: none; border-radius: 8px; box-shadow: 0 4px 12px rgba(79,110,247,.3); transition: transform .15s;">📈
+          Open Graph</button>
+        <div class="status-dot" title="Online"></div>
+      </div>
+    </header>
+
+    <div class="messages" id="messages">
+      <div class="empty-state" id="empty-state">
+        <div class="big">🎓</div>
+        <h3>Hello! I'm StudyBot</h3>
+        <p>Set your metrics on the left, predict your grade, then ask me anything — I'll give you notes, study tips, and
+          resources tailored to you.</p>
+      </div>
+    </div>
+
+    <div class="input-bar">
+      <div class="input-row">
+        <textarea id="chat-input" rows="1" placeholder="Ask about a subject, study tips, or your grade…"
+          onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+        <button class="send-btn" onclick="sendMessage()" title="Send">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13" />
+            <polygon points="22 2 15 22 11 13 2 9 22 2" />
+          </svg>
+        </button>
+      </div>
+      <div class="input-hint">Enter to send · Shift+Enter for new line</div>
+    </div>
+  </main>
+
+  <!-- ══ SCRIPT ════════════════════════════════════════════════ -->
+  <script src="script.js"></script>
+</body>
+
+</html>

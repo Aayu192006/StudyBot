@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+.git/
+.gitignore
+.vscode/
+*.pkl
+# Include the ML model if you want it in the image, otherwise exclude and mount.
+# Here we copy it in Dockerfile, so we don't ignore it unless we want to rebuild efficiently.

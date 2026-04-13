@@ -1,0 +1,250 @@
+// ── CONFIG ────────────────────────────────────────────────────────────────────
+// Change this if your backend runs on a different host/port
+const API_BASE = "http://localhost:8000";
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let conversationHistory = [];
+let currentMetrics = null;
+let isLoading = false;
+
+// ── GRADE COLORS ──────────────────────────────────────────────────────────────
+const GRADE_COLORS = { A: "#22c55e", B: "#84cc16", C: "#f59e0b", D: "#f97316", F: "#ef4444" };
+const GRADE_DESCS = {
+  A: "Excellent! Keep it up.",
+  B: "Good work — push for the top!",
+  C: "Average — let's improve together.",
+  D: "Needs improvement — don't give up!",
+  F: "Critical — time to act now.",
+};
+
+// ── PREDICT GRADE ──────────────────────────────────────────────────────────────
+async function predictGrade() {
+  const metrics = getMetrics();
+  const btn = document.querySelector(".predict-btn");
+  btn.textContent = "⏳ Predicting…";
+  btn.disabled = true;
+
+  try {
+    const resp = await fetch(`${API_BASE}/predict-grade`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(metrics),
+    });
+
+    if (!resp.ok) throw new Error("API error");
+    const data = await resp.json();
+    currentMetrics = metrics;
+    showGrade(data.grade, data.method);
+    addBotMessage(`I've predicted your grade as **${data.grade}** based on your metrics! Feel free to ask me anything — like if you're weak in a specific subject, I'll pull up notes and study techniques for you. 📚`);
+  } catch (e) {
+    showGrade("?", "error");
+    addBotMessage(`There was an error predicting your grade: The ML Model could not be reached or failed to load. Please ensure the backend and model are fully operational.`);
+  } finally {
+    btn.textContent = "⚡ Predict My Grade";
+    btn.disabled = false;
+  }
+}
+
+function showGrade(grade, method) {
+  const card = document.getElementById("grade-card");
+  const letter = document.getElementById("grade-letter");
+  const methodEl = document.getElementById("grade-method");
+  const desc = document.getElementById("grade-desc");
+
+  letter.textContent = grade;
+  letter.style.color = GRADE_COLORS[grade] || "#fff";
+  methodEl.textContent = method === "ml_model" ? "ML model" : "Rule-based estimate";
+  desc.textContent = GRADE_DESCS[grade] || "";
+  card.classList.add("visible");
+}
+
+// ── SEND MESSAGE ───────────────────────────────────────────────────────────────
+async function sendMessage() {
+  const input = document.getElementById("chat-input");
+  const text = input.value.trim();
+  if (!text || isLoading) return;
+
+  input.value = "";
+  autoResize(input);
+  hideEmptyState();
+  addUserMessage(text);
+  showTyping();
+
+  conversationHistory.push({ role: "user", content: text });
+  isLoading = true;
+
+  try {
+    const body = {
+      message: text,
+      conversation_history: conversationHistory.slice(-10),
+      metrics: currentMetrics || null,
+    };
+
+    const resp = await fetch(`${API_BASE}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!resp.ok) throw new Error("API error");
+    const data = await resp.json();
+
+    removeTyping();
+    conversationHistory.push({ role: "assistant", content: data.reply });
+
+    if (data.grade_info && !currentMetrics) {
+      currentMetrics = body.metrics;
+      showGrade(data.grade_info.grade, data.grade_info.method);
+    }
+
+    addBotMessage(data.reply, data.search_results || []);
+  } catch (e) {
+    removeTyping();
+    // Graceful fallback using Claude API directly from the browser
+    await callClaudeFallback(text);
+  } finally {
+    isLoading = false;
+  }
+}
+
+async function callClaudeFallback(text) {
+  // NOTE: In production, NEVER expose your API key client-side.
+  // This fallback is for demo purposes. Use your backend in production.
+  const ANTHROPIC_API_KEY = ""; // Leave empty — handled by backend
+  if (!ANTHROPIC_API_KEY) {
+    addBotMessage("⚠️ I couldn't reach the backend server. Please make sure your FastAPI server is running on port 8000. Check the README for setup instructions.");
+    return;
+  }
+}
+
+// ── QUICK PROMPT ───────────────────────────────────────────────────────────────
+function sendQuick(text) {
+  document.getElementById("chat-input").value = text;
+  sendMessage();
+}
+
+// ── DOM HELPERS ───────────────────────────────────────────────────────────────
+function getMetrics() {
+  return {
+    weekly_study_hours: parseFloat(document.getElementById("s-hours").value),
+    attendance_percentage: parseFloat(document.getElementById("s-att").value),
+    class_participation: parseFloat(document.getElementById("s-part").value),
+    total_score: parseFloat(document.getElementById("s-score").value),
+  };
+}
+
+function hideEmptyState() {
+  const e = document.getElementById("empty-state");
+  if (e) e.remove();
+}
+
+function addUserMessage(text) {
+  const msgs = document.getElementById("messages");
+  const div = document.createElement("div");
+  div.className = "msg user";
+  div.innerHTML = `
+    <div class="avatar usr">You</div>
+    <div class="bubble">${escapeHtml(text)}</div>`;
+  msgs.appendChild(div);
+  scrollBottom();
+}
+
+function addBotMessage(text, sources = []) {
+  const msgs = document.getElementById("messages");
+  const div = document.createElement("div");
+  div.className = "msg";
+
+  const formatted = formatMarkdown(text);
+  let sourcesHtml = "";
+  if (sources.length > 0) {
+    sourcesHtml = `<div class="sources">
+      ${sources.map(s => `<a class="source-chip" href="${s.link}" target="_blank" rel="noopener" title="${escapeHtml(s.title)}">${escapeHtml(s.title)}</a>`).join("")}
+    </div>`;
+  }
+
+  div.innerHTML = `
+    <div class="avatar bot">🤖</div>
+    <div class="bubble">${formatted}${sourcesHtml}</div>`;
+  msgs.appendChild(div);
+
+  // INLINE DESMOS INJECTION
+  const targets = div.querySelectorAll(".inline-graph-target");
+  targets.forEach((el, index) => {
+    const expr = el.getAttribute("data-expr");
+    el.className = "inline-graph";
+    el.id = "inline-graph-" + Date.now() + "-" + index;
+    const calc = Desmos.GraphingCalculator(el, { expressions: false, settingsMenu: false, zoomButtons: true });
+    calc.setExpression({ id: 'graph1', latex: expr });
+  });
+
+  scrollBottom();
+}
+
+let masterCalc = null;
+function openGraphModal() {
+  document.getElementById("graph-backdrop").style.display = "grid";
+  if (!masterCalc) {
+    masterCalc = Desmos.GraphingCalculator(document.getElementById("master-calculator"));
+  }
+}
+
+function closeGraphModal() {
+  document.getElementById("graph-backdrop").style.display = "none";
+}
+
+
+function showTyping() {
+  const msgs = document.getElementById("messages");
+  const div = document.createElement("div");
+  div.className = "msg";
+  div.id = "typing-indicator";
+  div.innerHTML = `
+    <div class="avatar bot">🤖</div>
+    <div class="bubble"><div class="typing"><span></span><span></span><span></span></div></div>`;
+  msgs.appendChild(div);
+  scrollBottom();
+}
+
+function removeTyping() {
+  const t = document.getElementById("typing-indicator");
+  if (t) t.remove();
+}
+
+function scrollBottom() {
+  const msgs = document.getElementById("messages");
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function handleKey(e) {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+}
+
+function autoResize(el) {
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, 140) + "px";
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function formatMarkdown(text) {
+  return text
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" style="color: var(--accent); text-decoration: underline;">$1</a>')
+    .replace(/\[GRAPH:\s*(.*?)\]/gi, `<div class="inline-graph-target" data-expr="$1"></div>`)
+    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.*?)\*/g, "<em>$1</em>")
+    .replace(/^### (.+)$/gm, "<strong>$1</strong>")
+    .replace(/^## (.+)$/gm, "<strong>$1</strong>")
+    .replace(/^- (.+)$/gm, "<li>$1</li>")
+    .replace(/(<li>.*<\/li>)/gs, "<ul>$1</ul>")
+    .replace(/\n\n/g, "<br/><br/>")
+    .replace(/\n/g, "<br/>");
+}
+
+// ── WELCOME MESSAGE ────────────────────────────────────────────────────────────
+window.addEventListener("DOMContentLoaded", () => {
+  setTimeout(() => {
+    addBotMessage("👋 Hi there! I'm StudyBot. **Set your metrics** on the left panel and click **Predict My Grade** to get started. Then ask me anything — like:\n\n- *I'm weak in Mathematics*\n- *Give me Physics notes*\n- *How can I study better?*\n\nI'll fetch the best resources and guide you step by step! 🚀");
+  }, 400);
+});
