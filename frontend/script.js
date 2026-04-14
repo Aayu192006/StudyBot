@@ -3,8 +3,7 @@
 // Change this for production — Replace YOUR_RENDER_URL with your actual Render deployment URL
 const API_BASE = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
   ? "http://localhost:8000"
-  : "https://studybot-backend.onrender.com"; // Example placeholder
-
+  : "https://studybot-1-0zp6.onrender.com"; 
 
 // ── STATE ─────────────────────────────────────────────────────────────────────
 let conversationHistory = [];
@@ -28,6 +27,8 @@ async function predictGrade() {
   btn.textContent = "⏳ Predicting…";
   btn.disabled = true;
 
+  console.log(`Attempting prediction at: ${API_BASE}/predict-grade`);
+
   try {
     const resp = await fetch(`${API_BASE}/predict-grade`, {
       method: "POST",
@@ -35,14 +36,26 @@ async function predictGrade() {
       body: JSON.stringify(metrics),
     });
 
-    if (!resp.ok) throw new Error("API error");
+    if (!resp.ok) {
+      const errorData = await resp.json().catch(() => ({ detail: "Unknown server error" }));
+      throw new Error(errorData.detail || "API error");
+    }
     const data = await resp.json();
     currentMetrics = metrics;
     showGrade(data.grade, data.method);
     addBotMessage(`I've predicted your grade as **${data.grade}** based on your metrics! Feel free to ask me anything — like if you're weak in a specific subject, I'll pull up notes and study techniques for you. 📚`);
   } catch (e) {
+    console.error("Prediction error:", e);
     showGrade("?", "error");
-    addBotMessage(`There was an error predicting your grade: The ML Model could not be reached or failed to load. Please ensure the backend and model are fully operational.`);
+    
+    let errorMsg = "The ML Model could not be reached or failed to load. Please ensure the backend and model are fully operational.";
+    if (e.message.includes("Failed to fetch")) {
+      errorMsg = "⚠️ **Connection Error**: I couldn't reach your backend at " + API_BASE + ". Please make sure your Render service is active and not sleeping.";
+    } else if (e.message.includes("ML Model has not been trained")) {
+      errorMsg = "⚠️ **Model Error**: The backend is running, but the ML model file is missing or failed to load.";
+    }
+    
+    addBotMessage(`There was an error predicting your grade: ${errorMsg}`);
   } finally {
     btn.textContent = "⚡ Predict My Grade";
     btn.disabled = false;

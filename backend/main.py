@@ -34,11 +34,16 @@ groq_client = Groq(api_key=GROQ_API_KEY)
 
 # ─── LOAD MODEL ────────────────────────────────────────────────────────────────
 # Try to load your trained ML model; fall back to a simple rule-based predictor
+print(f"DEBUG: Attempting to load model from: {MODEL_PATH}")
 try:
-    grade_model = joblib.load(MODEL_PATH)
-    print(f"INFO: ML model loaded from {MODEL_PATH}")
+    if not os.path.exists(MODEL_PATH):
+        print(f"ERROR: Model file NOT FOUND at {MODEL_PATH}")
+        grade_model = None
+    else:
+        grade_model = joblib.load(MODEL_PATH)
+        print(f"INFO: ML model loaded successfully from {MODEL_PATH}")
 except Exception as e:
-    print(f"WARNING: Could not load ML model ({e}). Using rule-based fallback.")
+    print(f"WARNING: Could not load ML model ({e}). Path: {MODEL_PATH}")
     grade_model = None
 
 
